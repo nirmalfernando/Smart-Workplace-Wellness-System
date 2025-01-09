@@ -1,0 +1,19 @@
+{
+    "logs": [
+        {
+            "outputFile": "com.example.smart_workplace.app-mergeDebugResources-29:/values-v24/values-v24.xml",
+            "map": [
+                {
+                    "source": "/home/nirmal/.gradle/caches/transforms-3/d938bf79968f3c70cf36d5fe19677164/transformed/media-1.1.0/res/values-v24/values-v24.xml",
+                    "from": {
+                        "startLines": "2,3,4,5",
+                        "startColumns": "4,4,4,4",
+                        "startOffsets": "55,121,182,248",
+                        "endColumns": "65,60,65,66",
+                        "endOffsets": "116,177,243,310"
+                    }
+                }
+            ]
+        }
+    ]
+}
