@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
+// import 'package:smart_workplace/screens/heartrate_history.dart';
+import 'package:smart_workplace/screens/light_control.dart';
 import 'wellness_notification.dart';
 
 class SensorDashboard extends StatefulWidget {
@@ -102,6 +104,29 @@ class _SensorDashboardState extends State<SensorDashboard> {
     return Colors.red;
   }
 
+  // Navigation handlers
+  void _navigateToLightControl(int currentValue) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => LightControlScreen(
+          currentLightLevel: currentValue,
+        ),
+      ),
+    );
+  }
+
+  // void _navigateToHeartRateHistory(int currentValue) {
+  //   Navigator.push(
+  //     context,
+  //     MaterialPageRoute(
+  //       builder: (context) => HeartRateHistoryScreen(
+  //         currentHeartRate: currentValue,
+  //       ),
+  //     ),
+  //   );
+  // }
+
   // Reusable sensor card builder
   Widget _buildSensorCard({
     required Stream<DatabaseEvent> stream,
@@ -109,45 +134,60 @@ class _SensorDashboardState extends State<SensorDashboard> {
     required IconData icon,
     required Color color,
     required String unit,
+    void Function(int value)? onTap,
   }) {
     return Card(
       elevation: 4,
       child: StreamBuilder<DatabaseEvent>(
         stream: stream,
         builder: (context, snapshot) {
-          return Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              children: [
-                Row(
-                  children: [
-                    Icon(icon, color: color, size: 28),
-                    const SizedBox(width: 8),
-                    Text(
-                      title,
-                      style: Theme.of(context).textTheme.titleLarge,
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                if (snapshot.hasError)
-                  const Text(
-                    'Error loading data',
-                    style: TextStyle(color: Colors.red),
-                  )
-                else if (!snapshot.hasData)
-                  const CircularProgressIndicator()
-                else
-                  Column(
+          final currentValue = snapshot.hasData ? 
+              (snapshot.data!.snapshot.value as int? ?? 0) : 0;
+
+          return InkWell(
+            onTap: onTap != null ? () => onTap(currentValue) : null,
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                children: [
+                  Row(
                     children: [
+                      Icon(icon, color: color, size: 28),
+                      const SizedBox(width: 8),
                       Text(
-                        '${snapshot.data!.snapshot.value ?? 0}',
-                        style: Theme.of(context).textTheme.headlineMedium,
+                        title,
+                        style: Theme.of(context).textTheme.titleLarge,
                       ),
-                      Text(unit, style: Theme.of(context).textTheme.bodyLarge),
+                      if (onTap != null) ...[
+                        const Spacer(),
+                        Icon(
+                          Icons.chevron_right,
+                          color: Colors.grey,
+                          size: 24,
+                        ),
+                      ],
                     ],
                   ),
-              ],
+                  const SizedBox(height: 16),
+                  if (snapshot.hasError)
+                    const Text(
+                      'Error loading data',
+                      style: TextStyle(color: Colors.red),
+                    )
+                  else if (!snapshot.hasData)
+                    const CircularProgressIndicator()
+                  else
+                    Column(
+                      children: [
+                        Text(
+                          currentValue.toString(),
+                          style: Theme.of(context).textTheme.headlineMedium,
+                        ),
+                        Text(unit, style: Theme.of(context).textTheme.bodyLarge),
+                      ],
+                    ),
+                ],
+              ),
             ),
           );
         },
@@ -268,6 +308,7 @@ class _SensorDashboardState extends State<SensorDashboard> {
                 icon: Icons.light_mode,
                 color: Colors.amber,
                 unit: 'lux',
+                onTap: _navigateToLightControl,
               ),
               const SizedBox(height: 16),
               _buildSensorCard(
@@ -276,6 +317,7 @@ class _SensorDashboardState extends State<SensorDashboard> {
                 icon: Icons.favorite,
                 color: Colors.red,
                 unit: 'BPM',
+                // onTap: _navigateToHeartRateHistory,
               ),
               const SizedBox(height: 16),
               _buildSensorCard(
