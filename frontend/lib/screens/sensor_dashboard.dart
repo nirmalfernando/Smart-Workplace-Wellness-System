@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
-// import 'package:smart_workplace/screens/heartrate_history.dart';
+import 'package:smart_workplace/screens/heartrate_history.dart';
 import 'package:smart_workplace/screens/light_control.dart';
 import 'wellness_notification.dart';
 
@@ -116,16 +116,16 @@ class _SensorDashboardState extends State<SensorDashboard> {
     );
   }
 
-  // void _navigateToHeartRateHistory(int currentValue) {
-  //   Navigator.push(
-  //     context,
-  //     MaterialPageRoute(
-  //       builder: (context) => HeartRateHistoryScreen(
-  //         currentHeartRate: currentValue,
-  //       ),
-  //     ),
-  //   );
-  // }
+  void _navigateToHeartRateHistory(int currentValue) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => HeartRateHistoryScreen(
+          currentHeartRate: currentValue,
+        ),
+      ),
+    );
+  }
 
   // Reusable sensor card builder
   Widget _buildSensorCard({
@@ -317,7 +317,7 @@ class _SensorDashboardState extends State<SensorDashboard> {
                 icon: Icons.favorite,
                 color: Colors.red,
                 unit: 'BPM',
-                // onTap: _navigateToHeartRateHistory,
+                onTap: _navigateToHeartRateHistory,
               ),
               const SizedBox(height: 16),
               _buildSensorCard(
