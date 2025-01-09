@@ -1,0 +1,30 @@
+{
+  "project_info": {
+    "project_number": "505428523462",
+    "firebase_url": "https://smart-workplace-1d688-default-rtdb.asia-southeast1.firebasedatabase.app",
+    "project_id": "smart-workplace-1d688",
+    "storage_bucket": "smart-workplace-1d688.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:505428523462:android:8b3a680279232a5af29ac7",
+        "android_client_info": {
+          "package_name": "com.example.smart_workplace"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDKjOUjJoOLva24dRyCidC-DVJMr7Z5cT0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
