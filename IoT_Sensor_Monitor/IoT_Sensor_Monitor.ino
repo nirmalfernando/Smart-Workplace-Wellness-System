@@ -7,10 +7,10 @@
 #include "addons/RTDBHelper.h"
 
 // WiFi and Firebase settings
-#define WIFI_SSID "Wolfy"
-#define WIFI_PASSWORD "3776a2c3"
-#define API_KEY "AIzaSyBTBbiRx5QMNZ8UxRTgL-Kk2BlkcBBFvNI"
-#define DATABASE_URL "https://smart-workplace-1d688-default-rtdb.asia-southeast1.firebasedatabase.app/"
+#define WIFI_SSID <YOUR_WIFI>
+#define WIFI_PASSWORD <WIFI_PASSWORD>
+#define API_KEY <API_KEY>
+#define DATABASE_URL <DATABASE_URL>
 
 // LED Pin definitions
 const int WHITE_LED_1 = 25;    // First white LED
