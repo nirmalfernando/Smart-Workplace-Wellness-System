@@ -1,113 +1,277 @@
 #include <Wire.h>
 #include <BH1750FVI.h>
-#include "MAX30105.h"
-#include "heartRate.h"
+#include <Firebase_ESP_Client.h>
+#include <WiFiUdp.h>
+#include <NTPClient.h>
+#include "addons/TokenHelper.h"
+#include "addons/RTDBHelper.h"
+
+// WiFi and Firebase settings
+#define WIFI_SSID "Wolfy"
+#define WIFI_PASSWORD "3776a2c3"
+#define API_KEY "AIzaSyBTBbiRx5QMNZ8UxRTgL-Kk2BlkcBBFvNI"
+#define DATABASE_URL "https://smart-workplace-1d688-default-rtdb.asia-southeast1.firebasedatabase.app/"
+
+// LED Pin definitions
+const int WHITE_LED_1 = 25;    // First white LED
+const int WHITE_LED_2 = 26;    // Second white LED
+const int WARM_LED_1 = 27;     // First warm white LED
+const int WARM_LED_2 = 14;     // Second warm white LED
 
 // BH1750FVI settings
 uint8_t ADDRESSPIN = 13;
 BH1750FVI::eDeviceAddress_t DEVICEADDRESS = BH1750FVI::k_DevAddress_H;
 BH1750FVI::eDeviceMode_t DEVICEMODE = BH1750FVI::k_DevModeContHighRes;
-
-// Create LightSensor instance for BH1750FVI sensor
 BH1750FVI LightSensor(ADDRESSPIN, DEVICEADDRESS, DEVICEMODE);
 
-// MAX30102 settings
-MAX30105 particleSensor;
-const byte RATE_SIZE = 4; 
-byte rates[RATE_SIZE]; // Array of heart rates
-byte rateSpot = 0;
-long lastBeat = 0; // Time at which the last beat occurred
-float beatsPerMinute;
-int beatAvg;
+// I2C Pins
+#define SCL_PIN 22
+#define SDA_PIN 21
 
-// Sound sensor settings
-const int SOUND_SENSOR_PIN = 35; // ADC pin connected to the OUT pin of the sound sensor
+// Sound Sensor settings
+const int SOUND_SENSOR_PIN = 35;
 
-// MQ-135 Gas Sensor settings
-const int MQ135_PIN = 12; // ADC pin connected to the MQ-135 sensor
+// Gas Sensor (MQ-135) settings
+const int MQ135_PIN = 12;
 
-// I2C Pins (Define SCL and SDA)
-#define SCL_PIN 22  // Define SCL pin 
-#define SDA_PIN 21  // Define SDA pin 
+// Firebase objects
+FirebaseAuth auth;
+FirebaseConfig config;
+FirebaseData fbdo;
+FirebaseData fbdoLight;  // Separate object for light control stream
+
+// NTP Client for time
+WiFiUDP ntpUDP;
+NTPClient timeClient(ntpUDP, "pool.ntp.org");
+
+// Timing variables
+unsigned long lightSensorPrevMillis = 0;
+unsigned long firebasePrevMillis = 0;
+unsigned long soundSensorPrevMillis = 0;
+unsigned long gasSensorPrevMillis = 0;
+const unsigned long sensorInterval = 5000;
+
+// Variables to store readings
+uint16_t lux = 0;
+int soundLevel = 0;
+int airQuality = 0;
+int heartRateAvg = 75;
+
+// Light control variables
+String currentMode = "off";
+float currentIntensity = 0.5;
+unsigned long lastLightCheck = 0;
+const unsigned long CHECK_INTERVAL = 5000;
 
 void setup() {
-  // Start Serial Monitor
   Serial.begin(115200);
   Serial.println("Initializing...");
 
-  // Initialize Wire for both sensors (using custom SCL and SDA pins)
+  // Initialize LED pins
+  pinMode(WHITE_LED_1, OUTPUT);
+  pinMode(WHITE_LED_2, OUTPUT);
+  pinMode(WARM_LED_1, OUTPUT);
+  pinMode(WARM_LED_2, OUTPUT);
+  turnOffAllLEDs();
+
+  // Initialize Wire
   Wire.begin(SDA_PIN, SCL_PIN);
 
   // Initialize BH1750FVI sensor
-  LightSensor.begin(); // No need for 'if' check, as it returns void
+  LightSensor.begin();
   Serial.println("BH1750FVI Initialized.");
 
-  // Initialize MAX30102 sensor
-  if (!particleSensor.begin(Wire, I2C_SPEED_FAST)) {
-    Serial.println("MAX30102 was not found. Please check wiring/power.");
-    while (1);
-  }
-  Serial.println("Place your index finger on the sensor with steady pressure.");
-  particleSensor.setup(); // Configure sensor with default settings
-  particleSensor.setPulseAmplitudeRed(0x0A); // Turn Red LED to low to indicate sensor is running
-  particleSensor.setPulseAmplitudeGreen(0); // Turn off Green LED
-
-  // Print setup messages for additional sensors
   Serial.println("Sound Sensor Initialized.");
   Serial.println("MQ-135 Gas Sensor Initialized.");
+
+  // WiFi setup
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(300);
+    Serial.print(".");
+  }
+  Serial.println("\nConnected to WiFi!");
+
+  // Initialize NTP Client
+  timeClient.begin();
+  timeClient.setTimeOffset(19800);  // UTC +5:30 for Sri Lanka
+
+  // Firebase setup
+  config.api_key = API_KEY;
+  config.database_url = DATABASE_URL;
+  
+  if (Firebase.signUp(&config, &auth, "", "")) {
+    Serial.println("Firebase signUp OK");
+  } else {
+    Serial.printf("Firebase signUp Error: %s\n", config.signer.signupError.message.c_str());
+  }
+
+  config.token_status_callback = tokenStatusCallback;
+  Firebase.begin(&config, &auth);
+  Firebase.reconnectWiFi(true);
+
+  // Set up listener for light control settings
+  if (Firebase.RTDB.beginStream(&fbdoLight, "/lights")) {
+    Serial.println("Light control stream began");
+    Firebase.RTDB.setStreamCallback(&fbdoLight, streamCallback, streamTimeoutCallback);
+  }
 }
 
 void loop() {
-  // BH1750FVI Light Sensor Reading
-  uint16_t lux = LightSensor.GetLightIntensity();
-  Serial.print("Light Intensity: ");
-  Serial.println(lux);
+  unsigned long currentMillis = millis();
+  timeClient.update();
 
-  // MAX30102 Heart Rate Sensor Reading
-  long irValue = particleSensor.getIR();
+  // Light sensor reading
+  if (currentMillis - lightSensorPrevMillis >= sensorInterval) {
+    lightSensorPrevMillis = currentMillis;
+    lux = LightSensor.GetLightIntensity();
+    Serial.print("Light: ");
+    Serial.println(lux);
+  }
 
-  if (checkForBeat(irValue) == true) {
-    // We sensed a beat!
-    long delta = millis() - lastBeat;
-    lastBeat = millis();
+  // Sound level reading
+  if (currentMillis - soundSensorPrevMillis >= sensorInterval) {
+    soundSensorPrevMillis = currentMillis;
+    soundLevel = analogRead(SOUND_SENSOR_PIN);
+    Serial.print("Sound Level: ");
+    Serial.println(soundLevel);
+  }
 
-    beatsPerMinute = 60 / (delta / 1000.0);
+  // Gas sensor reading
+  if (currentMillis - gasSensorPrevMillis >= sensorInterval) {
+    gasSensorPrevMillis = currentMillis;
+    int mq135Value = analogRead(MQ135_PIN);
+    airQuality = map(mq135Value, 0, 4095, 0, 1000);
+    Serial.print("Raw MQ-135 Value: ");
+    Serial.print(mq135Value);
+    Serial.print(" | Air Quality Index: ");
+    Serial.println(airQuality);
+  }
 
-    if (beatsPerMinute < 255 && beatsPerMinute > 20) {
-      rates[rateSpot++] = (byte)beatsPerMinute; // Store this reading in the array
-      rateSpot %= RATE_SIZE; // Wrap variable
+  // Firebase updates
+  if (currentMillis - firebasePrevMillis >= sensorInterval) {
+    firebasePrevMillis = currentMillis;
 
-      // Take average of readings
-      beatAvg = 0;
-      for (byte x = 0 ; x < RATE_SIZE ; x++)
-        beatAvg += rates[x];
-      beatAvg /= RATE_SIZE;
+    if (Firebase.ready()) {
+      // Upload light intensity
+      if (Firebase.RTDB.setInt(&fbdo, "/sensors/light", lux)) {
+        Serial.println("Light data uploaded.");
+      } else {
+        Serial.printf("Light data upload failed: %s\n", fbdo.errorReason().c_str());
+      }
+
+      // Upload heart rate
+      if (Firebase.RTDB.setInt(&fbdo, "/sensors/heartRate", heartRateAvg)) {
+        Serial.println("Heart rate data uploaded.");
+      } else {
+        Serial.printf("Heart rate upload failed: %s\n", fbdo.errorReason().c_str());
+      }
+
+      // Upload sound level
+      if (Firebase.RTDB.setInt(&fbdo, "/sensors/soundLevel", soundLevel)) {
+        Serial.println("Sound level data uploaded.");
+      } else {
+        Serial.printf("Sound level upload failed: %s\n", fbdo.errorReason().c_str());
+      }
+
+      // Upload gas sensor data
+      if (Firebase.RTDB.setInt(&fbdo, "/sensors/airQuality", airQuality)) {
+        Serial.println("Gas sensor data uploaded.");
+      } else {
+        Serial.printf("Gas sensor data upload failed: %s\n", fbdo.errorReason().c_str());
+      }
     }
   }
 
-  // Print Heart Rate Sensor Data
-  Serial.print("IR=");
-  Serial.print(irValue);
-  Serial.print(", BPM=");
-  Serial.print(beatsPerMinute);
-  Serial.print(", Avg BPM=");
-  Serial.print(beatAvg);
+  // Light control check
+  if (currentMillis - lastLightCheck >= CHECK_INTERVAL) {
+    lastLightCheck = currentMillis;
+    if (currentMode == "auto") {
+      handleAutoMode();
+    }
+  }
+}
 
-  if (irValue < 50000)
-    Serial.print(" No finger?");
+void streamCallback(FirebaseStream data) {
+  if (data.dataPath() == "/") {
+    FirebaseJson &json = data.jsonObject();
+    FirebaseJsonData result;
+    
+    // Get mode
+    if(json.get(result, "mode")) {
+      currentMode = result.stringValue;
+    }
+    
+    // Get intensity
+    if(json.get(result, "intensity")) {
+      currentIntensity = result.floatValue;
+    }
+    
+    updateLighting();
+  }
+}
 
-  Serial.println();
+void streamTimeoutCallback(bool timeout) {
+  if (timeout) {
+    Serial.println("Stream timeout, resume streaming...");
+  }
+}
 
-  // Sound Sensor Reading
-  int soundLevel = analogRead(SOUND_SENSOR_PIN);
-  Serial.print("Sound Level: ");
-  Serial.println(soundLevel);
+bool isDaytime() {
+  int currentHour = timeClient.getHours();
+  return (currentHour >= 6 && currentHour < 18);
+}
 
-  // MQ-135 Gas Sensor Reading
-  int mq135Value = analogRead(MQ135_PIN);
-  int airQuality = map(mq135Value, 0, 4095, 0, 1000); // Map to air quality index
-  Serial.print("Raw MQ-135 Value: ");
-  Serial.print(mq135Value);
-  Serial.print(" | Air Quality Index: ");
-  Serial.println(airQuality);
+void handleAutoMode() {
+  // Updated thresholds based on your sensor readings
+  if (lux < 30000 || lux > 50000) {
+    if (isDaytime()) {
+      // Turn on white lights during day
+      digitalWrite(WHITE_LED_1, HIGH);
+      digitalWrite(WHITE_LED_2, LOW);
+      digitalWrite(WARM_LED_1, LOW);
+      digitalWrite(WARM_LED_2, LOW);
+    } else {
+      // Turn on warm lights during night
+      digitalWrite(WHITE_LED_1, LOW);
+      digitalWrite(WHITE_LED_2, LOW);
+      digitalWrite(WARM_LED_1, HIGH);
+      digitalWrite(WARM_LED_2, LOW);
+    }
+  } else {
+    turnOffAllLEDs();
+  }
+}
+
+void updateLighting() {
+  turnOffAllLEDs();
+  
+  if (currentMode == "off") {
+    return;
+  }
+  
+  if (currentMode == "auto") {
+    handleAutoMode();
+    return;
+  }
+  
+  // Handle manual modes (white or warm)
+  bool useWarmLights = (currentMode == "warm");
+  int led1 = useWarmLights ? WARM_LED_1 : WHITE_LED_1;
+  int led2 = useWarmLights ? WARM_LED_2 : WHITE_LED_2;
+  
+  if (currentIntensity > 0) {
+    digitalWrite(led1, HIGH);  // First LED
+  }
+  
+  if (currentIntensity >= 1) {
+    digitalWrite(led2, HIGH);  // Second LED
+  }
+}
+
+void turnOffAllLEDs() {
+  digitalWrite(WHITE_LED_1, LOW);
+  digitalWrite(WHITE_LED_2, LOW);
+  digitalWrite(WARM_LED_1, LOW);
+  digitalWrite(WARM_LED_2, LOW);
 }
