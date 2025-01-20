@@ -10,7 +10,7 @@
 #define WIFI_SSID <YOUR_WIFI>
 #define WIFI_PASSWORD <WIFI_PASSWORD>
 #define API_KEY <API_KEY>
-#define DATABASE_URL <DATABASE_URL>
+#define DATABASE_URL <FIREBASE_DATABASE_URL>
 
 // LED Pin definitions
 const int WHITE_LED_1 = 25;    // First white LED
@@ -38,7 +38,7 @@ const int MQ135_PIN = 12;
 FirebaseAuth auth;
 FirebaseConfig config;
 FirebaseData fbdo;
-FirebaseData fbdoLight;  // Separate object for light control stream
+FirebaseData fbdoLight;  
 
 // NTP Client for time
 WiFiUDP ntpUDP;
@@ -223,24 +223,25 @@ bool isDaytime() {
 }
 
 void handleAutoMode() {
-  // Updated thresholds based on your sensor readings
-  if (lux < 30000 || lux > 50000) {
-    if (isDaytime()) {
-      // Turn on white lights during day
-      digitalWrite(WHITE_LED_1, HIGH);
-      digitalWrite(WHITE_LED_2, LOW);
-      digitalWrite(WARM_LED_1, LOW);
-      digitalWrite(WARM_LED_2, LOW);
+    // Check the light level
+    if (lux < 300) {  
+        bool isDayTime = isDaytime();
+        
+        // Select which LEDs are lighting up based on the time of the day
+        int led1 = isDayTime ? WHITE_LED_1 : WARM_LED_1;
+        int led2 = isDayTime ? WHITE_LED_2 : WARM_LED_2;
+        
+        // Apply user's intensity preference
+        if (currentIntensity > 0) {
+            digitalWrite(led1, HIGH);  // First LED activates when intensity > 0
+        }
+        
+        if (currentIntensity >= 1) {
+            digitalWrite(led2, HIGH);  // Second LED activates when intensity = 1
+        }
     } else {
-      // Turn on warm lights during night
-      digitalWrite(WHITE_LED_1, LOW);
-      digitalWrite(WHITE_LED_2, LOW);
-      digitalWrite(WARM_LED_1, HIGH);
-      digitalWrite(WARM_LED_2, LOW);
+        turnOffAllLEDs();
     }
-  } else {
-    turnOffAllLEDs();
-  }
 }
 
 void updateLighting() {
