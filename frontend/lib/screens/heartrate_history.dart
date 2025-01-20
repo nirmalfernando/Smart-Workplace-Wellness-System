@@ -1,9 +1,7 @@
 import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:fl_chart/fl_chart.dart';
-import 'package:intl/intl.dart';
 
 class HeartRateHistoryScreen extends StatefulWidget {
   final int currentHeartRate;
@@ -25,12 +23,16 @@ class _HeartRateHistoryScreenState extends State<HeartRateHistoryScreen> {
   double _maxRate = 0;
   double _minRate = 0;
   double _avgRate = 0;
+  // Track the current heart rate for real-time display
+  late int _currentHeartRate;
   StreamSubscription<DatabaseEvent>? _heartRateSubscription;
   StreamSubscription<DatabaseEvent>? _historySubscription;
 
   @override
   void initState() {
     super.initState();
+    // Initialize current heart rate with the passed value
+    _currentHeartRate = widget.currentHeartRate;
     _setupRealtimeUpdates();
   }
 
@@ -47,12 +49,14 @@ class _HeartRateHistoryScreenState extends State<HeartRateHistoryScreen> {
     _heartRateSubscription = _database
         .child('heartRate')
         .onValue
-        .listen(_updateCurrentHeartRate);
-
-    // Store historical data when heart rate changes
-    _heartRateSubscription?.onData((event) {
+        .listen((event) {
       if (event.snapshot.value != null) {
-        _storeHistoricalData(event.snapshot.value as int);
+        final newRate = event.snapshot.value as int;
+        setState(() {
+          _currentHeartRate = newRate;
+          // Store the new data point immediately
+          _storeHistoricalData(newRate);
+        });
       }
     });
 
@@ -62,6 +66,7 @@ class _HeartRateHistoryScreenState extends State<HeartRateHistoryScreen> {
 
   Future<void> _storeHistoricalData(int heartRate) async {
     try {
+      // Store the new heart rate with current timestamp
       await _database.child('heartRateHistory').push().set({
         'timestamp': ServerValue.timestamp,
         'value': heartRate,
@@ -88,16 +93,6 @@ class _HeartRateHistoryScreenState extends State<HeartRateHistoryScreen> {
             _handleError(error.toString());
           },
         );
-  }
-
-  void _updateCurrentHeartRate(DatabaseEvent event) {
-    if (event.snapshot.value != null) {
-      final currentRate = event.snapshot.value as int;
-      // Update UI if needed
-      setState(() {
-        // Update any UI elements that show current rate
-      });
-    }
   }
 
   DateTime _getStartTime(DateTime now) {
@@ -127,7 +122,6 @@ class _HeartRateHistoryScreenState extends State<HeartRateHistoryScreen> {
             final timestamp = (value['timestamp'] as int).toDouble();
             final rate = (value['value'] as int).toDouble();
             
-            // Convert timestamp to hours for display
             final date = DateTime.fromMillisecondsSinceEpoch(timestamp.toInt());
             final timeValue = _selectedTimeRange == '1h' 
                 ? date.hour + (date.minute / 60)
@@ -172,6 +166,72 @@ class _HeartRateHistoryScreenState extends State<HeartRateHistoryScreen> {
       _isLoading = true;
     });
     _loadHistoricalData();
+  }
+
+  // Enhanced current heart rate display with status
+  Widget _buildCurrentHeartRateCard() {
+    String status;
+    Color statusColor;
+    
+    if (_currentHeartRate < 60) {
+      status = 'Low';
+      statusColor = Colors.blue;
+    } else if (_currentHeartRate < 100) {
+      status = 'Normal';
+      statusColor = Colors.green;
+    } else if (_currentHeartRate < 140) {
+      status = 'Elevated';
+      statusColor = Colors.orange;
+    } else {
+      status = 'High';
+      statusColor = Colors.red;
+    }
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          children: [
+            const Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.favorite, color: Colors.red, size: 28),
+                SizedBox(width: 8),
+                Text(
+                  'Current Heart Rate',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w500),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Text(
+              '$_currentHeartRate BPM',
+              style: const TextStyle(
+                fontSize: 32,
+                fontWeight: FontWeight.bold,
+                color: Colors.red,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+              decoration: BoxDecoration(
+                color: statusColor.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: statusColor),
+              ),
+              child: Text(
+                status,
+                style: TextStyle(
+                  color: statusColor,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Widget _buildStatCard(String title, double value, IconData icon, Color color) {
@@ -290,31 +350,8 @@ class _HeartRateHistoryScreenState extends State<HeartRateHistoryScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Column(
-                  children: [
-                    const Text(
-                      'Current Heart Rate',
-                      style: TextStyle(fontSize: 16),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      '${widget.currentHeartRate} BPM',
-                      style: const TextStyle(
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.red,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
+            _buildCurrentHeartRateCard(),
             const SizedBox(height: 16),
-
-            // Time range selector
             SegmentedButton<String>(
               segments: const [
                 ButtonSegment(value: '1h', label: Text('1 Hour')),
@@ -327,8 +364,6 @@ class _HeartRateHistoryScreenState extends State<HeartRateHistoryScreen> {
               },
             ),
             const SizedBox(height: 16),
-
-            // Statistics cards
             Row(
               children: [
                 Expanded(
@@ -358,8 +393,6 @@ class _HeartRateHistoryScreenState extends State<HeartRateHistoryScreen> {
               ],
             ),
             const SizedBox(height: 16),
-
-            // Chart
             Expanded(
               child: Card(
                 child: Padding(
